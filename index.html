@@ -8,6 +8,7 @@
 <style>
 body{font-family:Arial, sans-serif;background:#0f172a;color:#fff;margin:0;padding:10px}
 h1{text-align:center;font-size:18px;margin-bottom:10px}
+.status{background:#1e293b;padding:8px;border-radius:8px;text-align:center;margin-bottom:10px;font-size:12px}
 .board{display:flex;gap:10px;overflow-x:auto;padding-bottom:20px}
 .column{background:#1e293b;padding:10px;border-radius:12px;min-width:85vw;max-width:85vw}
 @media(min-width:768px){.column{min-width:300px;max-width:300px}}
@@ -18,22 +19,168 @@ button{padding:6px;border:none;border-radius:6px;cursor:pointer;font-size:12px;w
 .add-btn{background:#facc15;font-weight:bold}
 .small-btn{background:#22c55e}
 .delete-btn{background:#ef4444}
-.msg-btn{background:#3b82f6}
 textarea{width:100%;height:60px;border-radius:6px;border:none;padding:6px;margin-top:5px;font-size:12px}
 </style>
 </head>
 <body>
 
 <h1>CRM Global Rastreamento - Online</h1>
-
+<div class="status" id="status">🔄 Conectando ao servidor...</div>
 <div class="board" id="board"></div>
 
 <script type="module">
 
-// 🔥 FIREBASE CONFIG
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+const firebaseConfig = {
+  apiKey: "AIzaSyApCbQJCUQSwP0g6vSBqwrIMSK7n-w9ILc",
+  authDomain: "global-tecnologia-kanban.firebaseapp.com",
+  projectId: "global-tecnologia-kanban",
+  storageBucket: "global-tecnologia-kanban.firebasestorage.app",
+  messagingSenderId: "526527534352",
+  appId: "1:526527534352:web:22b874f8029b3cd4c48195"
+};
+
+const etapas=[
+"Cliente Qualificado",
+"Confirmação de Intenção",
+"Coleta de Dados",
+"Envio do Contrato",
+"Pagamento Antes de Agendar",
+"Confirmação Financeira",
+"Agendamento"
+];
+
+let db = null;
+let online = true;
+
+function criarEstruturaVazia(){
+const board=document.getElementById('board');
+board.innerHTML='';
+
+etapas.forEach(etapa=>{
+let col=document.createElement('div');
+col.className='column';
+col.innerHTML=`
+<h3>${etapa}</h3>
+<div class='counter'>Total: 0</div>
+<button class='add-btn' disabled>Adicionar Cliente</button>
+`;
+board.appendChild(col);
+});
+}
+
+async function iniciarFirebase(){
+try{
+const app = initializeApp(firebaseConfig);
+db = getFirestore(app);
+document.getElementById('status').innerText="✅ Conectado ao Firebase";
+carregarClientes();
+}catch(error){
+online = false;
+document.getElementById('status').innerText="⚠️ Modo Offline (Erro na conexão)";
+criarEstruturaVazia();
+}
+}
+
+async function carregarClientes(){
+try{
+const snapshot = await getDocs(collection(db, "clientes"));
+let dados={};
+etapas.forEach(e=>dados[e]=[]);
+
+snapshot.forEach(docSnap=>{
+const cliente=docSnap.data();
+cliente.id=docSnap.id;
+dados[cliente.etapa].push(cliente);
+});
+
+criarBoard(dados);
+}catch(error){
+document.getElementById('status').innerText="⚠️ Erro ao carregar dados (verifique billing ou regras)";
+criarEstruturaVazia();
+}
+}
+
+function criarBoard(dados){
+const board=document.getElementById('board');
+board.innerHTML='';
+
+etapas.forEach(etapa=>{
+let col=document.createElement('div');
+col.className='column';
+
+let titulo=document.createElement('h3');
+titulo.innerText=etapa;
+col.appendChild(titulo);
+
+let contador=document.createElement('div');
+contador.className='counter';
+contador.innerText=`Total: ${dados[etapa].length}`;
+col.appendChild(contador);
+
+let btn=document.createElement('button');
+btn.className='add-btn';
+btn.innerText='Adicionar Cliente';
+btn.onclick=()=>adicionarCliente(etapa);
+col.appendChild(btn);
+
+(dados[etapa]||[]).forEach(cliente=>{
+let card=document.createElement('div');
+card.className='card';
+card.innerHTML=`
+<strong>${cliente.nome}</strong>
+<textarea oninput="editarMensagem('${cliente.id}',this.value)">${cliente.mensagem || ''}</textarea>
+<button class='small-btn' onclick="mover('${cliente.id}','${etapa}')">Avançar</button>
+<button class='delete-btn' onclick="remover('${cliente.id}')">Excluir</button>
+`;
+col.appendChild(card);
+});
+
+board.appendChild(col);
+});
+}
+
+window.adicionarCliente = async function(etapa){
+let nome=prompt('Nome do cliente:');
+if(nome && online){
+await addDoc(collection(db,"clientes"),{
+nome:nome,
+etapa:etapa,
+mensagem:""
+});
+carregarClientes();
+}
+}
+
+window.mover = async function(id,etapaAtual){
+if(!online) return;
+let pos=etapas.indexOf(etapaAtual);
+if(pos<etapas.length-1){
+await updateDoc(doc(db,"clientes",id),{etapa:etapas[pos+1]});
+carregarClientes();
+}
+}
+
+window.remover = async function(id){
+if(!online) return;
+await deleteDoc(doc(db,"clientes",id));
+carregarClientes();
+}
+
+window.editarMensagem = async function(id,texto){
+if(!online) return;
+await updateDoc(doc(db,"clientes",id),{mensagem:texto});
+}
+
+criarEstruturaVazia();
+iniciarFirebase();
+
+</script>
+
+</body>
+</html>
 const firebaseConfig = {
   apiKey: "AIzaSyApCbQJCUQSwP0g6vSBqwrIMSK7n-w9ILc",
   authDomain: "global-tecnologia-kanban.firebaseapp.com",
@@ -144,3 +291,4 @@ carregarClientes();
 
 </body>
 </html>
+
