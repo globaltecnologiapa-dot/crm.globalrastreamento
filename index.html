@@ -121,18 +121,32 @@ document.getElementById("status").innerText="⚠️ Modo Offline com Backup";
 }
 
 async function sincronizar(){
+
 if(!online) return;
+
 try{
-const snapshot=await getDocs(collection(db,"clientes"));
-clientes=[];
+const snapshot = await getDocs(collection(db,"clientes"));
+
+let dadosFirebase = [];
+
 snapshot.forEach(docSnap=>{
-let c=docSnap.data();
-c.id=docSnap.id;
-clientes.push(c);
+let c = docSnap.data();
+c.id = docSnap.id;
+dadosFirebase.push(c);
 });
+
+// 🔥 se firebase tiver dados, usa ele
+if(dadosFirebase.length > 0){
+clientes = dadosFirebase;
 salvarLocal();
+}
+
 criarBoard();
-}catch{}
+
+}catch(e){
+console.log("Erro sincronização");
+}
+
 }
 
 function criarBoard(){
@@ -169,13 +183,35 @@ board.appendChild(col);
 });
 }
 
-window.adicionarCliente=function(etapa){
-let nome=prompt("Nome do cliente:");
+window.adicionarCliente = async function(etapa){
+
+let nome = prompt("Nome do cliente:");
 if(!nome) return;
-let novo={id:Date.now().toString(),nome,etapa,mensagem:""};
+
+let novo = {
+id: Date.now().toString(),
+nome,
+etapa,
+mensagem:""
+};
+
 clientes.push(novo);
 salvarLocal();
 criarBoard();
+
+// 🔥 se estiver online salva no Firebase também
+if(online){
+try{
+await addDoc(collection(db,"clientes"),{
+nome:nome,
+etapa:etapa,
+mensagem:""
+});
+}catch(e){
+console.log("Erro ao salvar na nuvem, salvo localmente.");
+}
+}
+
 }
 
 window.mover=function(id,etapa){
@@ -266,4 +302,5 @@ iniciar();
 </script>
 </body>
 </html>
+
 
