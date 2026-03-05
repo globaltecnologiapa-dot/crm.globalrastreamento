@@ -3,43 +3,55 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CRM Global Rastreamento PRO Online</title>
+<title>CRM Global Rastreamento PRO</title>
 
 <style>
-body{font-family:Arial, sans-serif;background:#0f172a;color:#fff;margin:0;padding:10px}
-h1{text-align:center;font-size:18px;margin-bottom:10px}
+body{font-family:Arial;background:#0f172a;color:#fff;margin:0;padding:10px}
+h1{text-align:center;font-size:18px}
 .status{background:#1e293b;padding:8px;border-radius:8px;text-align:center;margin-bottom:10px;font-size:12px}
-.board{display:flex;gap:10px;overflow-x:auto;padding-bottom:20px}
-.column{background:#1e293b;padding:10px;border-radius:12px;min-width:85vw;max-width:85vw}
-@media(min-width:768px){.column{min-width:300px;max-width:300px}}
-.column h3{text-align:center;font-size:14px;margin:5px 0}
-.counter{font-size:12px;text-align:center;margin-bottom:8px;color:#facc15}
+.board{display:flex;gap:10px;overflow-x:auto}
+.column{background:#1e293b;padding:10px;border-radius:12px;min-width:85vw}
 .card{background:#334155;padding:8px;border-radius:8px;margin-bottom:8px;font-size:13px}
 button{padding:6px;border:none;border-radius:6px;cursor:pointer;font-size:12px;width:100%;margin-top:5px}
 .add-btn{background:#facc15;font-weight:bold}
 .small-btn{background:#22c55e}
 .delete-btn{background:#ef4444}
+.msg-btn{background:#3b82f6}
 textarea{width:100%;height:60px;border-radius:6px;border:none;padding:6px;margin-top:5px;font-size:12px}
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:#000000aa;display:none;justify-content:center;align-items:center}
+.modal-content{background:#1e293b;padding:15px;border-radius:12px;width:90%;max-width:400px}
+input{width:100%;padding:6px;border-radius:6px;border:none;margin-top:5px}
 </style>
 </head>
 <body>
 
-<h1>CRM Global Rastreamento - Online</h1>
-<div class="status" id="status">🔄 Conectando ao servidor...</div>
+<h1>CRM Global Rastreamento PRO</h1>
+<div class="status" id="status">🔄 Inicializando...</div>
+<button class="msg-btn" onclick="abrirMensagens()">📩 Mensagens Pré-definidas</button>
 <div class="board" id="board"></div>
 
-<script type="module">
+<!-- MODAL MENSAGENS -->
+<div class="modal" id="modalMsg">
+<div class="modal-content">
+<h3>Mensagens Salvas</h3>
+<div id="listaMensagens"></div>
+<input type="text" id="novaMensagem" placeholder="Digite nova mensagem ou link">
+<button onclick="salvarMensagem()">Salvar</button>
+<button onclick="fecharMensagens()">Fechar</button>
+</div>
+</div>
 
+<script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyApCbQJCUQSwP0g6vSBqwrIMSK7n-w9ILc",
-  authDomain: "global-tecnologia-kanban.firebaseapp.com",
-  projectId: "global-tecnologia-kanban",
-  storageBucket: "global-tecnologia-kanban.firebasestorage.app",
-  messagingSenderId: "526527534352",
-  appId: "1:526527534352:web:22b874f8029b3cd4c48195"
+apiKey: "SUA_API",
+authDomain: "SEU_AUTH",
+projectId: "SEU_PROJECT",
+storageBucket: "SEU_BUCKET",
+messagingSenderId: "SEU_ID",
+appId: "SEU_APP"
 };
 
 const etapas=[
@@ -52,243 +64,184 @@ const etapas=[
 "Agendamento"
 ];
 
-let db = null;
-let online = true;
+let db=null;
+let online=false;
+let clientes=[];
 
-function criarEstruturaVazia(){
-const board=document.getElementById('board');
-board.innerHTML='';
-
-etapas.forEach(etapa=>{
-let col=document.createElement('div');
-col.className='column';
-col.innerHTML=`
-<h3>${etapa}</h3>
-<div class='counter'>Total: 0</div>
-<button class='add-btn' disabled>Adicionar Cliente</button>
-`;
-board.appendChild(col);
-});
+function salvarLocal(){
+localStorage.setItem("crm_clientes",JSON.stringify(clientes));
 }
 
-async function iniciarFirebase(){
+function carregarLocal(){
+clientes=JSON.parse(localStorage.getItem("crm_clientes")||"[]");
+}
+
+function salvarMensagensLocal(lista){
+localStorage.setItem("crm_mensagens",JSON.stringify(lista));
+}
+
+function carregarMensagensLocal(){
+return JSON.parse(localStorage.getItem("crm_mensagens")||"[]");
+}
+
+async function iniciar(){
+carregarLocal();
+criarBoard();
+
 try{
-const app = initializeApp(firebaseConfig);
-db = getFirestore(app);
-document.getElementById('status').innerText="✅ Conectado ao Firebase";
-carregarClientes();
-}catch(error){
-online = false;
-document.getElementById('status').innerText="⚠️ Modo Offline (Erro na conexão)";
-criarEstruturaVazia();
+const app=initializeApp(firebaseConfig);
+db=getFirestore(app);
+online=true;
+document.getElementById("status").innerText="✅ Online com Backup Ativo";
+await sincronizar();
+}catch{
+document.getElementById("status").innerText="⚠️ Modo Offline com Backup";
 }
 }
 
-async function carregarClientes(){
+async function sincronizar(){
+if(!online) return;
 try{
-const snapshot = await getDocs(collection(db, "clientes"));
-let dados={};
-etapas.forEach(e=>dados[e]=[]);
-
+const snapshot=await getDocs(collection(db,"clientes"));
+clientes=[];
 snapshot.forEach(docSnap=>{
-const cliente=docSnap.data();
-cliente.id=docSnap.id;
-dados[cliente.etapa].push(cliente);
+let c=docSnap.data();
+c.id=docSnap.id;
+clientes.push(c);
 });
-
-criarBoard(dados);
-}catch(error){
-document.getElementById('status').innerText="⚠️ Erro ao carregar dados (verifique billing ou regras)";
-criarEstruturaVazia();
-}
+salvarLocal();
+criarBoard();
+}catch{}
 }
 
-function criarBoard(dados){
-const board=document.getElementById('board');
-board.innerHTML='';
-
+function criarBoard(){
+const board=document.getElementById("board");
+board.innerHTML="";
 etapas.forEach(etapa=>{
-let col=document.createElement('div');
-col.className='column';
-
-let titulo=document.createElement('h3');
-titulo.innerText=etapa;
-col.appendChild(titulo);
-
-let contador=document.createElement('div');
-contador.className='counter';
-contador.innerText=`Total: ${dados[etapa].length}`;
-col.appendChild(contador);
-
-let btn=document.createElement('button');
-btn.className='add-btn';
-btn.innerText='Adicionar Cliente';
-btn.onclick=()=>adicionarCliente(etapa);
-col.appendChild(btn);
-
-(dados[etapa]||[]).forEach(cliente=>{
-let card=document.createElement('div');
-card.className='card';
-card.innerHTML=`
+let col=document.createElement("div");
+col.className="column";
+col.innerHTML=`<h3>${etapa}</h3>
+<button class='add-btn' onclick="adicionarCliente('${etapa}')">Adicionar</button>`;
+clientes.filter(c=>c.etapa===etapa).forEach(cliente=>{
+col.innerHTML+=`
+<div class="card">
 <strong>${cliente.nome}</strong>
-<textarea oninput="editarMensagem('${cliente.id}',this.value)">${cliente.mensagem || ''}</textarea>
-<button class='small-btn' onclick="mover('${cliente.id}','${etapa}')">Avançar</button>
-<button class='delete-btn' onclick="remover('${cliente.id}')">Excluir</button>
-`;
-col.appendChild(card);
-});
 
+<textarea onchange="editarMensagem('${cliente.id}',this.value)">
+${cliente.mensagem||""}
+</textarea>
+
+<button onclick="copiarWhats('${cliente.id}')" style="background:#25d366">
+📲 Copiar p/ WhatsApp
+</button>
+
+<button class='small-btn' onclick="mover('${cliente.id}','${etapa}')">
+Avançar
+</button>
+
+<button class='delete-btn' onclick="remover('${cliente.id}')">
+Excluir
+</button>
+</div>`;
+});
 board.appendChild(col);
 });
 }
 
-window.adicionarCliente = async function(etapa){
-let nome=prompt('Nome do cliente:');
-if(nome && online){
-await addDoc(collection(db,"clientes"),{
-nome:nome,
-etapa:etapa,
-mensagem:""
-});
-carregarClientes();
-}
+window.adicionarCliente=function(etapa){
+let nome=prompt("Nome do cliente:");
+if(!nome) return;
+let novo={id:Date.now().toString(),nome,etapa,mensagem:""};
+clientes.push(novo);
+salvarLocal();
+criarBoard();
 }
 
-window.mover = async function(id,etapaAtual){
-if(!online) return;
-let pos=etapas.indexOf(etapaAtual);
+window.mover=function(id,etapa){
+let pos=etapas.indexOf(etapa);
 if(pos<etapas.length-1){
-await updateDoc(doc(db,"clientes",id),{etapa:etapas[pos+1]});
-carregarClientes();
+clientes.find(c=>c.id===id).etapa=etapas[pos+1];
+salvarLocal();
+criarBoard();
 }
 }
 
-window.remover = async function(id){
-if(!online) return;
-await deleteDoc(doc(db,"clientes",id));
-carregarClientes();
+window.remover=function(id){
+clientes=clientes.filter(c=>c.id!==id);
+salvarLocal();
+criarBoard();
 }
 
-window.editarMensagem = async function(id,texto){
-if(!online) return;
-await updateDoc(doc(db,"clientes",id),{mensagem:texto});
+window.editarMensagem=function(id,texto){
+clientes.find(c=>c.id===id).mensagem=texto;
+salvarLocal();
 }
 
-criarEstruturaVazia();
-iniciarFirebase();
+// ===== SISTEMA DE MENSAGENS =====
+window.abrirMensagens=function(){
+document.getElementById("modalMsg").style.display="flex";
+renderMensagens();
+}
 
+window.fecharMensagens=function(){
+document.getElementById("modalMsg").style.display="none";
+}
+
+function renderMensagens(){
+let lista=carregarMensagensLocal();
+let div=document.getElementById("listaMensagens");
+div.innerHTML="";
+lista.forEach((m,i)=>{
+div.innerHTML+=`
+<div style="margin-bottom:5px">
+<textarea onchange="editarMsg(${i},this.value)">${m}</textarea>
+<button onclick="excluirMsg(${i})">Excluir</button>
+</div>`;
+});
+}
+
+window.salvarMensagem=function(){
+let texto=document.getElementById("novaMensagem").value;
+if(!texto) return;
+let lista=carregarMensagensLocal();
+lista.push(texto);
+salvarMensagensLocal(lista);
+document.getElementById("novaMensagem").value="";
+renderMensagens();
+}
+
+window.editarMsg=function(i,texto){
+let lista=carregarMensagensLocal();
+lista[i]=texto;
+salvarMensagensLocal(lista);
+}
+
+window.excluirMsg=function(i){
+let lista=carregarMensagensLocal();
+lista.splice(i,1);
+salvarMensagensLocal(lista);
+renderMensagens();
+}
+window.copiarWhats = function(id){
+
+let cliente = clientes.find(c=>c.id===id);
+
+if(!cliente) return;
+
+let texto = `Olá ${cliente.nome} 👋
+
+${cliente.mensagem}
+
+Global Rastreamento 🚗📡`;
+
+navigator.clipboard.writeText(texto).then(()=>{
+alert("✅ Mensagem copiada para WhatsApp!");
+}).catch(()=>{
+alert("⚠️ Não foi possível copiar automaticamente.");
+});
+
+}
+iniciar();
 </script>
-
 </body>
 </html>
-const firebaseConfig = {
-  apiKey: "AIzaSyApCbQJCUQSwP0g6vSBqwrIMSK7n-w9ILc",
-  authDomain: "global-tecnologia-kanban.firebaseapp.com",
-  projectId: "global-tecnologia-kanban",
-  storageBucket: "global-tecnologia-kanban.firebasestorage.app",
-  messagingSenderId: "526527534352",
-  appId: "1:526527534352:web:22b874f8029b3cd4c48195"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-const etapas=[
-"Cliente Qualificado",
-"Confirmação de Intenção",
-"Coleta de Dados",
-"Envio do Contrato",
-"Pagamento Antes de Agendar",
-"Confirmação Financeira",
-"Agendamento"
-];
-
-async function carregarClientes(){
-const snapshot = await getDocs(collection(db, "clientes"));
-let dados={};
-etapas.forEach(e=>dados[e]=[]);
-
-snapshot.forEach(docSnap=>{
-const cliente=docSnap.data();
-cliente.id=docSnap.id;
-dados[cliente.etapa].push(cliente);
-});
-
-criarBoard(dados);
-}
-
-function criarBoard(dados){
-const board=document.getElementById('board');
-board.innerHTML='';
-
-etapas.forEach(etapa=>{
-let col=document.createElement('div');
-col.className='column';
-
-let titulo=document.createElement('h3');
-titulo.innerText=etapa;
-col.appendChild(titulo);
-
-let contador=document.createElement('div');
-contador.className='counter';
-contador.innerText=`Total: ${dados[etapa].length}`;
-col.appendChild(contador);
-
-let btn=document.createElement('button');
-btn.className='add-btn';
-btn.innerText='Adicionar Cliente';
-btn.onclick=()=>adicionarCliente(etapa);
-col.appendChild(btn);
-
-(dados[etapa]||[]).forEach(cliente=>{
-let card=document.createElement('div');
-card.className='card';
-card.innerHTML=`
-<strong>${cliente.nome}</strong>
-<textarea oninput="editarMensagem('${cliente.id}',this.value)">${cliente.mensagem || ''}</textarea>
-<button class='small-btn' onclick="mover('${cliente.id}','${etapa}')">Avançar</button>
-<button class='delete-btn' onclick="remover('${cliente.id}')">Excluir</button>
-`;
-col.appendChild(card);
-});
-
-board.appendChild(col);
-});
-}
-
-window.adicionarCliente = async function(etapa){
-let nome=prompt('Nome do cliente:');
-if(nome){
-await addDoc(collection(db,"clientes"),{
-nome:nome,
-etapa:etapa,
-mensagem:""
-});
-carregarClientes();
-}
-}
-
-window.mover = async function(id,etapaAtual){
-let pos=etapas.indexOf(etapaAtual);
-if(pos<etapas.length-1){
-await updateDoc(doc(db,"clientes",id),{etapa:etapas[pos+1]});
-carregarClientes();
-}
-}
-
-window.remover = async function(id){
-await deleteDoc(doc(db,"clientes",id));
-carregarClientes();
-}
-
-window.editarMensagem = async function(id,texto){
-await updateDoc(doc(db,"clientes",id),{mensagem:texto});
-}
-
-carregarClientes();
-
-</script>
-
-</body>
-</html>
-
